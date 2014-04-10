@@ -1,3 +1,5 @@
+require 'colorize'
+
 class Piece
   attr_reader :color
   attr_accessor :position
@@ -8,11 +10,36 @@ class Piece
     @color = player
   end
 
-  def moves
-    movable_directions = all_movable_directions
-    collision_check(movable_directions)
+  def dup(duped_board)
+    self.class.new(@position.dup, duped_board, @color)
   end
 
+  def moves
+    movable_directions = all_movable_directions
+    possible_moves = collision_check(movable_directions)
+    if @board.turn == @color
+      return move_into_check(possible_moves)
+    else
+      return possible_moves
+    end
+  end
+
+  def move_into_check(possible_moves)
+    valid_moves = []
+
+    possible_moves.each do |possible_move|
+      duped_board = @board.dup
+      duped_piece = duped_board[@position]
+      
+      duped_board[possible_move] = duped_piece
+      duped_board[@position] = nil
+
+      duped_piece.position = possible_move
+
+      valid_moves << possible_move unless duped_board.in_check?(@color)
+    end
+    return valid_moves
+  end
 end
 
 ###############################################
@@ -44,7 +71,7 @@ end
 
 class Rook < SlidingPiece
   def to_s
-    @color == :white ? "\u2656" : "\u265C"
+    @color == :white ? "\u265C ".colorize(:light_white) : "\u265C ".colorize(:black)
   end
 
   def all_movable_directions
@@ -60,7 +87,7 @@ end
 
 class Bishop < SlidingPiece
   def to_s
-    @color == :white ? "\u2657" : "\u265D"
+    @color == :white ? "\u265D ".colorize(:light_white) : "\u265D ".colorize(:black)
   end
 
   def all_movable_directions
@@ -76,7 +103,7 @@ end
 
 class Queen < SlidingPiece
   def to_s
-    @color == :white ? "\u2655" : "\u265B"
+    @color == :white ? "\u265B ".colorize(:light_white) : "\u265B ".colorize(:black)
   end
 
   def all_movable_directions
@@ -115,7 +142,7 @@ class King < SteppingPiece
   DELTAS = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]]
 
   def to_s
-    @color == :white ? "\u2654" : "\u265A"
+    @color == :white ? "\u265A ".colorize(:light_white) : "\u265A ".colorize(:black)
   end
 
   def all_movable_directions
@@ -133,7 +160,7 @@ class Knight < SteppingPiece
   DELTAS = [[-2, -1], [-2,  1], [-1, -2], [-1,  2], [ 1, -2], [ 1,  2], [ 2, -1], [ 2,  1]]
 
   def to_s
-    @color == :white ? "\u2658" : "\u265E"
+    @color == :white ? "\u265E ".colorize(:light_white) : "\u265E ".colorize(:black)
   end
 
   def all_movable_directions
@@ -153,7 +180,7 @@ class Pawn < Piece
   BLACK_DELTAS = [[2, 0], [1, 0], [1,-1], [1,1]]
 
   def to_s
-    @color == :white ? "\u2659" : "\u265F"
+    @color == :white ? "\u265F ".colorize(:light_white) : "\u265F ".colorize(:black)
   end
 
   def all_movable_directions
@@ -174,13 +201,13 @@ class Pawn < Piece
       valid_moves = valid_moves[2..-1]
       return valid_moves
     elsif @board[movable_directions[0]] != nil
-      valid_moves = valid_moves[1..-1]
+      return valid_moves = valid_moves[1..-1]
     end
     if @color == :white && row == 6
-      return valid_moves #= valid_moves[1..-1]
+      return valid_moves 
     end
     if @color == :black && row == 1
-      return valid_moves #= valid_moves[1..-1]
+      return valid_moves 
     end
 
     valid_moves[1..-1]
@@ -189,11 +216,14 @@ end
 
 ###############################################
 class Board
-  attr_reader :board
-  def initialize
+  attr_reader :board, :turn
+  def initialize(turn_color = :white)
     @board = Array.new(8) { Array.new(8) }
+    @turn = turn_color
+  end
 
-    place_pieces
+  def all_pieces
+    @board.flatten.select{ |x| x }
   end
 
   def []=(position, piece)
@@ -204,6 +234,16 @@ class Board
   def [](position)
     row, col = position
     @board[row][col]
+  end
+
+  def dup
+    duped_board = Board.new(@turn)
+    self.all_pieces.each do |piece|
+      duped_piece = piece.dup(duped_board)
+
+      duped_board[duped_piece.position] = duped_piece
+    end
+    duped_board
   end
 
   def place_pieces
@@ -229,60 +269,119 @@ class Board
       @board[1][col] = Pawn.new([1, col], self, :black)
       @board[6][col] = Pawn.new([6, col], self, :white)
     end
-
-    #@board[7][7] = Rook.new([7, 7], @board, :white)
   end
 
   def render
-    puts "  #{(0..7).to_a.join(" ")}"
+    system('clear')
     8.times do |row|
-      row_str = [row]
+      row_str = [8 - row]
       8.times do |col|
-        row_str << (@board[row][col].nil? ? "_" : @board[row][col].to_s)
+        bg = (row + col).even? ? :white : :light_black
+
+        spot = (@board[row][col].nil? ? "  " : @board[row][col].to_s)
+        row_str << spot.colorize({ :background => bg })
       end
-      puts row_str.join(" ")
+      puts row_str.join("")
     end
+    puts "  #{('a'..'h').to_a.join(" ")}"
+  end
+
+  def change_turns
+    @turn == :white ? @turn = :black : @turn = :white
+  end
+
+  def king_location(color)
+    self.all_pieces.select { |piece| piece.class == King && piece.color == color }.first.position
+  end
+
+  def in_check?(color)
+    color == :white ? (opposite_color = :black) : (opposite_color = :white)
+    opposite_color_pieces = self.all_pieces.select { |piece| piece.color == opposite_color }
+
+    enemy_valid_moves = []
+    opposite_color_pieces.each do |piece|
+
+      piece.moves.each do |move|
+        enemy_valid_moves << move
+      end
+    end
+
+    enemy_valid_moves.include?(king_location(color))
+  end
+
+  def checkmate?(color)
+    in_check?(color) && all_pieces.select { |piece| piece.color == color }.all? { |piece| piece.moves.empty? }
   end
 end
 
 class Game
   attr_reader :board
   def initialize(board)
-    @turn = :white
     @board = board
+    @board.place_pieces
   end
 
   def run
-    while true
-      begin
+    until @board.checkmate?(:white) || @board.checkmate?(:black)
         @board.render
+        begin
         pos_of_piece, destination = get_input
 
         move_piece(pos_of_piece, destination)
-      rescue
+       
+        @board.change_turns
+        puts "Check!" if @board.in_check?(@board.turn)
+
+      rescue => e
         puts "Please enter valid move"
-        puts
+        puts e.message
         retry
       end
-
     end
+    puts "Mate!"
   end
 
   def get_input
+    puts "\n#{@board.turn.capitalize}'s move: \nEnter a command...\n"
+    input = gets.chomp
 
-    puts "\n#{@turn}'s move.  Enter your command:  'start location', 'end location'. i.e. 0,0 1,0"
-    input = gets.chomp.split(' ')
-    start_location, end_location = input.first.split(','), input.last.split(',')
+    unless input =~ /^[a-h][1-8] [a-h][1-8]$/
+      raise "Enter valid format."
+    end
 
-    start_location.map! { |coord| Integer(coord) }
-    end_location.map! { |coord| Integer(coord) }
-    [start_location, end_location]
+    input = input.split(' ')
+
+    start_location, end_location = input.first.split(//), input.last.split(//)
+
+    letter_hash = {
+      "a" => 0,
+      "b" => 1,
+      "c" => 2,
+      "d" => 3,
+      "e" => 4,
+      "f" => 5,
+      "g" => 6,
+      "h" => 7,
+      "1" => 7,
+      "2" => 6,
+      "3" => 5,
+      "4" => 4,
+      "5" => 3,
+      "6" => 2,
+      "7" => 1,
+      "8" => 0
+    }
+
+    new_start = [letter_hash[start_location.last], letter_hash[start_location.first]]
+    new_end = [letter_hash[end_location.last], letter_hash[end_location.first]]
+
+   [new_start, new_end]
   end
 
   def move_piece(pos_of_piece, destination)
     raise "No piece there" if @board[pos_of_piece].nil?
     moving_piece = @board[pos_of_piece]
-    if moving_piece.moves.include?(destination) && moving_piece.color == @turn
+    if moving_piece.moves.include?(destination) && moving_piece.color == @board.turn
       moving_piece.position = destination
 
       @board[destination].position = nil unless @board[destination].nil?
@@ -290,29 +389,13 @@ class Game
       @board[destination] = moving_piece
       @board[pos_of_piece] = nil
 
-      change_turns
     else
       raise "Invalid move"
     end
 
   end
-
-  def change_turns
-    @turn == :white ? @turn = :black : @turn = :white
-  end
 end
 
 chess = Game.new(Board.new)
-# chess.board[3][0] = Rook.new([3, 0], chess, :white)
-# chess.board[2][1] = Rook.new([2, 1], chess, :white)
-# chess.board[4][0] = Rook.new([4, 0], chess, :black)
-# chess.board[2][2] = Bishop.new([2, 2], chess, :black)
-# chess.board[1][1] = Bishop.new([1, 1], chess, :white)
-# chess.board[2][1] = Queen.new([2, 1], chess, :white)
-# #chess.board[1][2] = King.new([1, 2], chess, :white)
-# chess.board[4][3] = Knight.new([4, 3], chess, :black)
-# chess.board[1][2] = Pawn.new([1,2], chess, :black)
-# chess.board[1][4] = Knight.new([1, 4], chess, :white)
-# chess.board[1][3] = Knight.new([1, 3], chess, :white)
 chess.run
-#p chess.board[1][0].moves
+
